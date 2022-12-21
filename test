@@ -11,13 +11,13 @@ if [ ! -x "./push_swap" ]; then
 fi
 
 if [ ${#} -lt 2 ]; then
-        echo "ERROR! usage: ./test <STACK SIZE> <NB ITERATIONS> [JOBSMAX=9]" >&2;
+        echo "ERROR! usage: ./test <STACK SIZE> <NB ITERATIONS> [JOBSMAX=8]" >&2;
         exit 1;
 fi
 
 SSIZE=${1};
 NITER=${2};
-JOBSMAX=${3:-9};
+JOBSMAX=${3:-8};
 
 DIR=$(mktemp -d /tmp/push_swap_XXXXXXXX);
 trap "rm -rf ${DIR}" INT QUIT TERM EXIT;
