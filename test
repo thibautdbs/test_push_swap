@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 
+################################################################################
+### ERROR CHECKING
+
 if [ ! -x "./checker_linux" ]; then
-	echo "ERROR: checker_linux not found" >&2
+	echo "ERROR: checker_linux not found" >&2;
 	exit 1;
 fi
 
@@ -11,24 +14,42 @@ if [ ! -x "./push_swap" ]; then
 fi
 
 if [ ${#} -lt 2 ]; then
-        echo "ERROR! usage: ./test <STACK SIZE> <NB ITERATIONS> [JOBSMAX=8]" >&2;
-        exit 1;
+	echo "ERROR! usage: ./test <STACK SIZE> <NB ITERATIONS> [JOBSMAX=8]" >&2;
+	exit 1;
 fi
+
+################################################################################
+### ARGS
 
 SSIZE=${1};
 NITER=${2};
 JOBSMAX=${3:-8};
 
+################################################################################
+### CLEAN EXIT
+
+teardown()
+{
+	for PID in ${PIDS[@]}; do
+		kill ${PID};
+	done > /dev/null 2>&1;
+	rm -rf ${DIR};
+	exit 0;
+}
+trap teardown INT QUIT TERM EXIT;
+
+################################################################################
+### MAIN
+
 DIR=$(mktemp -d /tmp/push_swap_XXXXXXXX);
-trap "rm -rf ${DIR}" INT QUIT TERM EXIT;
 
 run()
 {
-        ARGS=$(shuf -i 1-${SSIZE} | xargs);
-        TMP=$(mktemp -p ${DIR});
-        RES=$(./push_swap ${ARGS} | tee ${TMP} | ./checker_linux ${ARGS});
-		echo "${RES};$(cat ${TMP} | wc -l);${ARGS};$(cat ${TMP} | xargs);";
-        echo -n "." >&2;
+	ARGS=$(shuf -i 1-${SSIZE} | xargs);
+	TMP=$(mktemp -p ${DIR});
+	RES=$(./push_swap ${ARGS} | tee ${TMP} | ./checker_linux ${ARGS});
+	echo "${RES};$(cat ${TMP} | wc -l);${ARGS};$(cat ${TMP} | xargs);";
+	echo -n "." >&2;
 }
 
 TMP=$(mktemp -p ${DIR});
@@ -38,6 +59,7 @@ for i in $(seq ${NITER}); do
 		wait -n
 	fi
 	run &
+	PIDS+=( ${!} );
 done > ${TMP};
 wait;
 echo;
