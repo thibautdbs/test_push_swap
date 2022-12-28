@@ -12,5 +12,6 @@ git -C ${TESTDIR} remote set-url --push \
 	origin git@github.com:thibautdbs/test_push_swap.git
 
 chmod +x "${TESTDIR}/test_mandatory";
-chmod +x "${TESTDIR}/test_push_swap/test_bonus";
+chmod +x "${TESTDIR}/test_bonus";
+chmod +x "${TESTDIR}/test_parsing";
 echo "DONE";
