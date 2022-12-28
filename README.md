@@ -10,15 +10,19 @@ You can set $TESTDIR environment variable to change install directory (default t
 ## Usage
 
 ```
-test_mandatory <SSIZE> <NITER> [JOBSMAX=8]
+Usage: test_mandatory [-j JOBSMAX=8] [-v] <SSIZE> <NITER>
+    -j: set maximum number of tests ran concurently (defaults to 8).
+    -v: run tests trough valgrind.
 ```
 *test_mandatory* will run *push_swap* through *checker_linux* with a randomly generated stack of size \<SSIZE\>, \<NITER\> times.
 Then outputs the maximum and the average number of operations push_swap printed.
 
 ```
-test_bonus <SSIZE> <NITER> [JOBSMAX=8]
+Usage: test_bonus [-j JOBSMAX=8] [-v] <SSIZE> <NITER>
+    -j: set maximum number of tests ran concurently (defaults to 8).
+    -v: run tests trough valgrind.
 ```
 *test_bonus* will run *push_swap* through *checker* and *checker_linux* with a randomly generated stack of size \<SSIZE\>, \<NITER\> times.
 Then compare their outputs.
 
-\[JOBSMAX\] specifies the maximum number of push_swap instances ran concurently (default to 8).
+
