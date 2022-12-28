@@ -120,12 +120,10 @@ run()
 	### ERROR LOG
 	LOG=$(mktemp -p ${DIR});
 	cat <<-EOF > ${LOG};
-		\$>export ARGS="${ARGS}";
-		\$>push_swap \${ARGS} > out
-		\$>cat out | ${VALGRIND} checker \${ARGS};
+		$>ARGS="${ARGS}"; ./push_swap \${ARGS} | ${VALGRIND} ./checker \${ARGS};
 		$(cat ${YOURS})
 		
-		\$>cat out | checker_linux \${ARGS};
+		$>ARGS="${ARGS}"; ./push_swap \${ARGS} | ${VALGRIND} ./checker_linux \${ARGS};
 		$(cat ${THEIRS})
 	EOF
 	echo ${LOG} >> ${ERRORS};

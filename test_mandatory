@@ -128,8 +128,7 @@ run()
 	LOG=$(mktemp -p ${TMP});
 
 	cat <<-EOF > ${LOG};
-		export ARG="${ARG}";
-		${VALGRIND} push_swap \${ARG} | checker_linux \${ARG};
+		$>ARG="${ARG}"; ${VALGRIND} ./push_swap \${ARG} | ./checker_linux \${ARG};
 		$(cat ${YOURS})
 	EOF
 	echo ${LOG} >> ${ERRORS};
