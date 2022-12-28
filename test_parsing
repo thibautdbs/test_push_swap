@@ -257,6 +257,60 @@ test_24()
 	expect_error "1 2 a 3";
 }
 
+if [ ${1} = 'bonus' ]; then
+	test_25()
+	{
+		INPUT=$(mktemp -p ${TMP});
+		echo -n 'ra' >${INPUT};
+		CMD="cat ${INPUT} | ${VALGRIND} ${CHECKER}";
+		expect_error 1 2 3;
+	}
+
+	test_26()
+	{
+		INPUT=$(mktemp -p ${TMP});
+		echo ' ra' >${INPUT};
+		CMD="cat ${INPUT} | ${VALGRIND} ${CHECKER}";
+		expect_error 1 2 3;
+	}
+
+	test_27()
+	{
+		INPUT=$(mktemp -p ${TMP});
+		echo 'ra ' >${INPUT};
+		CMD="cat ${INPUT} | ${VALGRIND} ${CHECKER}";
+		expect_error 1 2 3;
+	}
+
+	test_28()
+	{
+		INPUT=$(mktemp -p ${TMP});
+		echo '' >${INPUT};
+		CMD="cat ${INPUT} | ${VALGRIND} ${CHECKER}";
+		expect_error 1 2 3;
+	}
+
+	test_29()
+	{
+		INPUT=$(mktemp -p ${TMP});
+		echo 'rara' >${INPUT};
+		CMD="cat ${INPUT} | ${VALGRIND} ${CHECKER}";
+		expect_error 1 2 3;
+	}
+
+	test_30()
+	{
+		INPUT=$(mktemp -p ${TMP});
+		cat <<-EOF >${INPUT};
+		ra
+
+		rra
+		EOF
+		CMD="cat ${INPUT} | ${VALGRIND} ${CHECKER}";
+		expect_error 1 2 3;
+	}
+fi
+
 ################################################################################
 
 for TEST in $(declare -F | awk '$3 ~ /^test_/ {print $3}'); do
