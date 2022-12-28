@@ -1,0 +1,281 @@
+#!/usr/bin/env bash
+
+DIR="$(dirname ${0})/.."
+
+PUSH_SWAP="${DIR}/push_swap";
+CHECKER="${DIR}/checker";
+
+################################################################################
+
+put_usage()
+{
+	cat <<-EOF
+	Usage: test_parsing [-j JOBSMAX=8] <mandatory|bonus>
+	    -j: set maximum number of tests ran concurently (defaults to 8).
+	EOF
+}
+
+ARGS=()
+
+while [[ $# -gt 0 ]]; do
+	case ${1} in
+    -j)
+		JOBSMAX="${2}";
+		shift 2;
+		;;
+	-*|--*)
+		echo "Unknown option $1." >&2;
+		put_usage >&2;
+		exit 1;
+		;;
+	*)
+		ARGS+=("$1") # save positional arg
+		shift 1; # past argument
+		;;
+	esac
+done
+
+set -- "${ARGS[@]}"
+
+if [ ${#} -ne 1 ]; then
+	echo "expected on positional argument" >&2;
+	put_usage >&2;
+	exit 1;
+fi
+
+VALGRIND='valgrind -q --leak-check=full --show-reachable=yes';
+
+case ${1} in
+mandatory)
+	if [ ! -x "${PUSH_SWAP}" ]; then
+		echo "ERROR: push_swap not found.";
+		exit 1;
+	fi
+	CMD="${VALGRIND} ${PUSH_SWAP}";
+	;;
+bonus)
+	if [ ! -x "${CHECKER}" ]; then
+		echo "ERROR: checker not found.";
+		exit 1;
+	fi
+	CMD="echo -n | ${VALGRIND} ${CHECKER}";
+	;;
+*)
+	echo "Unknown command ${1}." >&2;
+		put_usage >&2;
+	exit 1;
+	;;
+esac
+
+JOBSMAX=${JOBSMAX:-8};
+
+################################################################################
+
+teardown()
+{
+	for PID in ${PIDS[@]}; do
+		kill ${PID};
+	done > /dev/null 2>&1;
+	rm -rf ${TMP};
+	exit 0;
+}
+trap teardown INT QUIT TERM EXIT;
+
+################################################################################
+
+TMP=$(mktemp -d /tmp/push_swap_XXXXXXXX);
+
+ERRORS=$(mktemp -p ${TMP});
+
+################################################################################
+
+expect()
+{
+	THEIRS=${1};
+	YOURS=$(mktemp -p ${TMP});
+
+	ARG=${2};
+	eval ${CMD} ${ARG} >${YOURS} 2>&1;
+
+	if [ -z "$(diff -q ${YOURS} ${THEIRS})" ]; then
+		echo -n '.';
+		return;
+	fi
+	echo -n 'E';
+
+	LOG=$(mktemp -p ${TMP});
+	cat <<-EOF >${LOG};
+	$>${CMD} ${ARG};
+	$(cat ${YOURS})
+	EOF
+	echo ${LOG} >> ${ERRORS};
+}
+
+ERRORFILE=$(mktemp -p ${TMP});
+echo "Error" > ${ERRORFILE};
+
+expect_error()
+{
+	expect "${ERRORFILE}" "${1}";
+}
+
+SUCCESSFILE=$(mktemp -p ${TMP});
+if [ "${1}" = "bonus" ]; then
+	echo "OK" >${SUCCESSFILE};
+fi
+
+expect_success()
+{
+	expect "${SUCCESSFILE}" "${1}";
+}
+
+EMPTYFILE=$(mktemp -p ${TMP});
+expect_empty()
+{
+	expect "${EMPTYFILE}" "${1}";
+}
+
+################################################################################
+
+test_1()
+{
+	expect_empty "";
+}
+
+test_2()
+{
+	expect_success "1 2 3";
+}
+
+test_3()
+{
+	expect_success "-6 1 2 3";
+}
+
+test_4()
+{
+	expect_success "-6 1 2 3 2147483647";
+}
+
+test_5()
+{
+	expect_success "-2147483648 -6 1 2 3";
+}
+
+test_6()
+{
+	expect_error "''";
+}
+
+test_7()
+{
+	expect_error " 1 2 3 ''";
+}
+
+test_8()
+{
+	expect_error " 1 2 '' 3";
+}
+
+test_9()
+{
+	expect_error "' '";
+}
+
+test_10()
+{
+	expect_error "-";
+}
+
+test_11()
+{
+	expect_error "+";
+}
+
+test_12()
+{
+	expect_error "'- '";
+}
+
+test_13()
+{
+	expect_error "'+ '";
+}
+
+test_14()
+{
+	expect_error "1 1";
+}
+
+test_15()
+{
+	expect_error "1 01";
+}
+
+test_16()
+{
+	expect_error "01 01";
+}
+
+test_17()
+{
+	expect_error "01 001";
+}
+
+test_18()
+{
+	expect_error "0 -0";
+}
+
+test_19()
+{
+	expect_error "00 -000";
+}
+
+test_20()
+{
+	expect_error "-2147483649";
+}
+
+test_21()
+{
+	expect_error "2147483648";
+}
+
+test_22()
+{
+	expect_error "a";
+}
+
+test_23()
+{
+	expect_error "1 2 3 a";
+}
+
+test_24()
+{
+	expect_error "1 2 a 3";
+}
+
+################################################################################
+
+for TEST in $(declare -F | awk '$3 ~ /^test_/ {print $3}'); do
+	if [ $(jobs | wc -l) -ge ${JOBSMAX} ]; then
+		wait -n
+	fi
+	${TEST} &
+	PIDS+=( ${!} );
+done
+wait;
+echo;
+
+if [ ! -s ${ERRORS} ]; then
+	echo "OK";
+fi
+
+i=1
+for ERROR in $(cat ${ERRORS}); do
+	echo "================================================ Error ${i}";
+	cat ${ERROR};
+	i=$(( i + 1 ));
+done
