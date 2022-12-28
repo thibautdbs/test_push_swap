@@ -7,7 +7,7 @@ if [ -f "${TESTDIR}" ]; then
 	exit 1;
 fi
 
-git clone --depth 1 git@github.com:thibautdbs/test_push_swap.git ${TESTDIR};
+git clone --depth 1 https://github.com/thibautdbs/test_push_swap.git ${TESTDIR};
 
 chmod +x "${TESTDIR}/test_mandatory";
 chmod +x "${TESTDIR}/test_push_swap/test_bonus";
