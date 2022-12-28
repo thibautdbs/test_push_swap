@@ -1,0 +1,126 @@
+#!/usr/bin/env bash
+
+DIR="$(dirname ${0})/.."
+
+PUSH_SWAP="${DIR}/push_swap";
+CHECKER="${DIR}/checker";
+CHECKER_LINUX="${DIR}/checker_linux";
+
+################################################################################
+### ERROR CHECKING
+
+if [ ! -x "${CHECKER_LINUX}" ]; then
+	echo "ERROR: checker_linux not found" >&2;
+	exit 1;
+fi
+
+if [ ! -x "${PUSH_SWAP}" ]; then
+	echo "ERROR: push_swap not found";
+	exit 1;
+fi
+
+if [ ! -x "${CHECKER}" ]; then
+	echo "ERROR: checker not found" >&2;
+	exit 1;
+fi
+
+if [ ${#} -lt 2 ]; then
+	echo "ERROR! usage: test_bonus <STACK SIZE> <NB ITERATIONS> [JOBSMAX=8]" >&2;
+	exit 1;
+fi
+
+################################################################################
+### ARGS
+
+SSIZE=${1};
+NITER=${2};
+JOBSMAX=${3:-8};
+
+################################################################################
+### CLEAN EXIT
+
+teardown()
+{
+	for PID in ${PIDS[@]}; do
+		kill ${PID};
+	done > /dev/null 2>&1;
+	rm -rf ${DIR};
+	exit 0;
+}
+trap teardown INT QUIT TERM EXIT;
+
+################################################################################
+### TOOLS
+
+rand_range()
+{
+	seq $(( - ${SSIZE} )) ${SSIZE} | shuf -n ${SSIZE} | xargs;
+}
+
+VALGRIND='valgrind -q --leak-check=full --show-reachable=yes';
+
+################################################################################
+### MAIN
+
+DIR=$(mktemp -d /tmp/push_swap_XXXXXXXX);
+
+ERRORS=$(mktemp -p ${DIR});
+
+run()
+{
+	OUT=$(mktemp -p ${DIR});
+	YOURS=$(mktemp -p ${DIR});
+	THEIRS=$(mktemp -p ${DIR});
+
+	ARGS=$(rand_range);
+	${PUSH_SWAP} ${ARGS} > ${OUT};
+	cat ${OUT} | ${VALGRIND} ${CHECKER} ${ARGS} >${YOURS} 2>&1;
+	cat ${OUT} | ${CHECKER_LINUX} ${ARGS} >${THEIRS} 2>&1;
+
+	if [ -z "$(diff -q ${YOURS} ${THEIRS})" ]; then
+		echo -n "." >&2;
+		return ; #TEST PASSED
+	fi
+	echo -n 'E' >&2; #TEST FAILED
+
+	### ERROR LOG
+	LOG=$(mktemp -p ${DIR});
+	cat <<-EOF > ${LOG};
+		\$>export ARGS="${ARGS}";
+		\$>push_swap \${ARGS} > out
+		\$>cat out | ${VALGRIND} checker \${ARGS};
+		$(cat ${YOURS})
+		
+		\$>cat out | checker_linux \${ARGS};
+		$(cat ${THEIRS})
+	EOF
+	echo ${LOG} >> ${ERRORS};
+}
+
+cat <<EOF
+testing with:
+push_swap \${ARG} 
+	| ${VALGRIND} checker \${ARG};
+
+EOF
+
+for i in $(seq ${NITER}); do
+	if [ $(jobs | wc -l) -ge ${JOBSMAX} ]; then
+		wait -n
+	fi
+	run &
+	PIDS+=( ${!} );
+done
+wait;
+echo;
+
+if [ ! -s ${ERRORS} ]; then
+	echo "OK";
+fi
+
+i=1
+for ERROR in $(cat ${ERRORS}); do
+	echo "================================================ Error ${i}";
+	cat ${ERROR};
+	i=$(( i + 1 ));
+done
