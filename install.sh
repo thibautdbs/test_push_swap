@@ -8,6 +8,8 @@ if [ -f "${TESTDIR}" ]; then
 fi
 
 git clone --depth 1 https://github.com/thibautdbs/test_push_swap.git ${TESTDIR};
+git -C ${TESTDIR} remote set-url --push \
+	origin git@github.com:thibautdbs/test_push_swap.git
 
 chmod +x "${TESTDIR}/test_mandatory";
 chmod +x "${TESTDIR}/test_push_swap/test_bonus";

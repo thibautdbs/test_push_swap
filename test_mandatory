@@ -18,17 +18,53 @@ if [ ! -x "${PUSH_SWAP}" ]; then
 	exit 1;
 fi
 
-if [ ${#} -lt 2 ]; then
-	echo "ERROR! usage: test_mandatory <STACK SIZE> <NB ITERATIONS> [JOBSMAX=8]" >&2;
-	exit 1;
-fi
-
 ################################################################################
 ### ARGS
 
+put_usage()
+{
+	cat <<-EOF
+	Usage: test_mandatory [-j JOBSMAX=8] [-v] <STACK SIZE> <NB ITERATIONS>
+	    -j: set maximum number of tests ran concurently (defaults to 8).
+	    -v: run tests trough valgrind.
+	EOF
+}
+
+ARGS=()
+
+while [[ $# -gt 0 ]]; do
+	case $1 in
+	-v)
+		VALGRIND='valgrind -q --leak-check=full --show-reachable=yes';
+		shift 1;
+		;;
+    -j)
+		JOBSMAX="${2}";
+		shift 2;
+		;;
+	-*|--*)
+		echo "Unknown option $1." >&2;
+		put_usage >&2;
+		exit 1;
+		;;
+	*)
+		ARGS+=("$1") # save positional arg
+		shift 1; # past argument
+		;;
+	esac
+done
+
+set -- "${ARGS[@]}"
+
+if [ ${#} -lt 2 ]; then
+	echo "Expected 2 positional arguments." >&2;
+	put_usage >&2;
+	exit 1;
+fi
+
 SSIZE=${1};
 NITER=${2};
-JOBSMAX=${3:-8};
+JOBSMAX=${JOBSMAX:-8};
 
 ################################################################################
 ### CLEAN EXIT
@@ -56,8 +92,6 @@ is_sorted()
 	printf '%s\n' ${@} | sort -C
 	[ ${?} -eq 0 ];
 }
-
-VALGRIND='valgrind -q --leak-check=full --show-reachable=yes';
 
 ################################################################################
 ### MAIN
@@ -103,8 +137,7 @@ run()
 
 cat <<EOF
 testing with:
-${VALGRIND} push_swap \${ARG} 
-	| checker_linux \${ARG};
+${VALGRIND} push_swap \${ARG} | checker_linux \${ARG};
 
 EOF
 
