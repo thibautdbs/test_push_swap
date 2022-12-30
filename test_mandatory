@@ -1,170 +1,197 @@
 #!/usr/bin/env bash
 
-DIR="$(dirname ${0})/.."
-
-PUSH_SWAP="${DIR}/push_swap";
-CHECKER_LINUX="${DIR}/checker_linux";
-
 ################################################################################
-### ERROR CHECKING
+### USAGE
 
-if [ ! -x "${CHECKER_LINUX}" ]; then
-	echo "ERROR: checker_linux not found" >&2;
-	exit 1;
-fi
-
-if [ ! -x "${PUSH_SWAP}" ]; then
-	echo "ERROR: push_swap not found";
-	exit 1;
-fi
-
-################################################################################
-### ARGS
-
-put_usage()
+my::put_usage()
 {
-	cat <<-EOF
+	cat <<-EOF 2>&1;
 	Usage: test_mandatory [-j JOBSMAX=8] [-v] <STACK SIZE> <NB ITERATIONS>
 	    -j: set maximum number of tests ran concurently (defaults to 8).
 	    -v: run tests trough valgrind.
 	EOF
 }
 
-ARGS=()
-
-while [[ $# -gt 0 ]]; do
-	case $1 in
-	-v)
-		VALGRIND='valgrind -q --leak-check=full --show-reachable=yes';
-		shift 1;
-		;;
-    -j)
-		JOBSMAX="${2}";
-		shift 2;
-		;;
-	-*|--*)
-		echo "Unknown option $1." >&2;
-		put_usage >&2;
-		exit 1;
-		;;
-	*)
-		ARGS+=("$1") # save positional arg
-		shift 1; # past argument
-		;;
-	esac
-done
-
-set -- "${ARGS[@]}"
-
-if [ ${#} -lt 2 ]; then
-	echo "Expected 2 positional arguments." >&2;
-	put_usage >&2;
-	exit 1;
-fi
-
-SSIZE=${1};
-NITER=${2};
-JOBSMAX=${JOBSMAX:-8};
-
 ################################################################################
-### CLEAN EXIT
+### INIT
 
-teardown()
+my::assert_command_exists()
 {
-	for PID in ${PIDS[@]}; do
-		kill ${PID};
-	done > /dev/null 2>&1;
-	rm -rf ${TMP};
-	exit 0;
+	if ! type "${1}" >/dev/null 2>&1; then
+		echo "ERROR: ${1} not found" >&2;
+		exit 1;
+	fi
 }
-trap teardown INT QUIT TERM EXIT;
+
+my::resolve_paths()
+{
+	local PROJECT_ROOT;
+
+	PROJECT_ROOT=$(realpath -m --relative-to=. "$(dirname ${0})/..");
+	readonly PUSH_SWAP="${PROJECT_ROOT}/push_swap";
+	readonly CHECKER_LINUX="${PROJECT_ROOT}/checker_linux";
+
+	my::assert_command_exists ${PUSH_SWAP};
+	my::assert_command_exists ${CHECKER_LINUX};
+	my::assert_command_exists valgrind;
+}
+
+my::parse_args()
+{
+	local ARGS;
+
+	declare -a ARGS;
+	declare -a -g CMD;
+	while [[ ${#} -gt 0 ]]; do
+		case ${1} in
+		-v)
+			CMD+=(valgrind -q --leak-check=full --show-reachable=yes);
+			shift 1;
+			;;
+		-j)
+			JOBSMAX="${2}";
+			shift 2;
+			;;
+		-*|--*)
+			echo "Unknown option ${1}." >&2;
+			my::put_usage;
+			exit 1;
+			;;
+		*)
+			ARGS+=("${1}") # save positional arg
+			shift 1; # past argument
+			;;
+		esac
+	done
+	set -- "${ARGS[@]}"
+	if [[ ${#} -ne 2 ]]; then
+		echo "Expected 2 positional arguments." >&2;
+		my::put_usage;
+		exit 1;
+	fi
+	readonly SSIZE=${1};
+	readonly NITER=${2};
+	readonly JOBSMAX=${JOBSMAX:-8};
+	readonly CMD+=(${PUSH_SWAP});
+}
 
 ################################################################################
 ### TOOLS
 
-rand_range()
+my::rand_range()
 {
 	seq $(( - ${SSIZE} )) ${SSIZE} | shuf -n ${SSIZE} | xargs;
 }
 
-is_sorted()
+my::mktemp()
 {
-	printf '%s\n' ${@} | sort -C
-	[ ${?} -eq 0 ];
+	mktemp -p ${TMP};
+}
+
+################################################################################
+### LOGGING
+
+my::put_error_logs()
+{
+	local i=1;
+	for ERROR in $(cat ${ERRORS}); do
+		echo "================================================ Error ${i}";
+		cat ${ERROR};
+		i=$(( i + 1 ));
+	done
+}
+
+my::put_summary()
+{
+	echo "================================================ STATS";
+	if [ ! -s ${ERRORS} ]; then
+		echo "OK: $(cat ${NOPS} | wc -l)/${NITER} tests passed.";
+	else
+		echo "KO: $(cat ${ERRORS} | wc -l)/${NITER} tests failed.";
+	fi
+	if [ ! -s "${NOPS}" ]; then
+		return;
+	fi
+
+	local readonly MAX=$(cat ${NOPS} | sort -n | tail -1);
+	local readonly SUM=$(cat ${NOPS} | xargs | sed 's/ / + /g' | bc );
+	local readonly AVG=$(( ${SUM} / $(cat ${NOPS} | wc -l) ));
+
+	echo "MAX=${MAX}";
+	echo "AVG=${AVG}";
 }
 
 ################################################################################
 ### MAIN
 
-TMP=$(mktemp -d /tmp/push_swap_XXXXXXXX);
-
-ERRORS=$(mktemp -p ${TMP});
-NOPS=$(mktemp -p ${TMP});
-
-run()
+my::test()
 {
-	OUT=$(mktemp -p ${TMP});
-	YOURS=$(mktemp -p ${TMP});
-	THEIRS=$(mktemp -p ${TMP});
+	local readonly OUT=$(my::mktemp);
+	local readonly YOURS=$(my::mktemp);
+	local readonly ARG=$(my::rand_range);
 
-	ARG=$(rand_range);
-	{
-		${VALGRIND} ${PUSH_SWAP} ${ARG}	\
-			| tee ${OUT} 				\
-			| ${CHECKER_LINUX} ${ARG};
-	} >${YOURS} 2>&1;
+	${CMD[@]} ${ARG} | tee ${OUT} | ${CHECKER_LINUX} ${ARG} >${YOURS} 2>&1;
 
-	if [ ! $(is_sorted ${ARG}) ]; then
-		echo "OK" > ${THEIRS};
+	#TEST PASS
+	if [ -z "$(diff -q ${YOURS} ${OK})" ]; then
+		echo -n ".";
+		flock ${NOPS} -c "cat ${OUT} | wc -l >>${NOPS}";
+		return;
 	fi
 
-	if [ -z "$(diff -q ${YOURS} ${THEIRS})" ]; then
-		echo -n "." >&2;
-		echo $(cat ${OUT} | wc -l) >> ${NOPS};
-		return;#TEST PASSED
-	fi
-	echo -n "E" >&2;#TEST FAILED
-
-	LOG=$(mktemp -p ${TMP});
-
-	cat <<-EOF > ${LOG};
-		$>ARG="${ARG}"; ${VALGRIND} ./push_swap \${ARG} | ./checker_linux \${ARG};
+	#TEST FAIL
+	echo -n "E";
+	local readonly LOG=$(my::mktemp);
+	cat <<-EOF >${LOG};
+		$>ARG="${ARG}"; ${CMD[@]} \${ARG} | ${CHECKER_LINUX} \${ARG};
 		$(cat ${YOURS})
 	EOF
-	echo ${LOG} >> ${ERRORS};
+	flock ${ERRORS} -c "echo ${LOG} >>${ERRORS}";
 }
 
-cat <<EOF
-testing with:
-${VALGRIND} push_swap \${ARG} | checker_linux \${ARG};
+my::run_tests()
+{
+	echo "using: ${CMD[@]} \${ARG} | ${CHECKER_LINUX} \${ARG}";
+	for i in $(seq ${NITER}); do
+		if [ $(jobs | wc -l) -ge ${JOBSMAX} ] 2>/dev/null; then
+			wait -n;
+		fi
+		my::test & 2>/dev/null;
+		PIDS+=( ${!} );
+	done
+	wait;
+	echo;
+}
 
-EOF
-
-for i in $(seq ${NITER}); do
-	if [ $(jobs | wc -l) -ge ${JOBSMAX} ]; then
-		wait -n
-	fi
-	run &
-	PIDS+=( ${!} );
-done
-wait;
-echo;
-
-i=1
-for ERROR in $(cat ${ERRORS}); do
-	echo "================================================ Error ${i}";
-	cat ${ERROR};
-	i=$(( i + 1 ));
-done
-
-if [ ! -s ${ERRORS} ]; then
-	echo "OK";
-fi
-
-echo "================================================ STATS";
-if [ ! -s "${NOPS}" ]; then
-	echo "ERROR: no passing test";
+my::teardown()
+{
+	echo;
+	for PID in ${PIDS[@]}; do
+		kill ${PID};
+	done > /dev/null 2>&1;
+	my::put_error_logs;
+	my::put_summary;
+	rm -rf ${TMP};
+	trap - INT QUIT TERM EXIT;
 	exit;
-fi
-echo "MAX=$(cat ${NOPS} | sort -n | tail -1)";
-echo "AVG=$(( $(cat ${NOPS} | xargs | sed 's/ / + /g' | bc) / $(cat ${NOPS} | wc -l) ))";
+}
+
+my::main()
+{
+	my::resolve_paths;
+	my::parse_args ${@};
+	
+	trap my::teardown INT QUIT TERM EXIT;
+
+	readonly TMP=$(mktemp -d /tmp/push_swap_XXXXXXXX);
+
+	readonly ERRORS=$(my::mktemp);
+	readonly NOPS=$(my::mktemp);
+
+	readonly OK=$(my::mktemp);
+	echo "OK" >${OK};
+
+	my::run_tests;
+}
+
+my::main ${@};
