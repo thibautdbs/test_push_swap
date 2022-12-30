@@ -130,7 +130,7 @@ my::test()
 	local readonly YOURS=$(my::mktemp);
 	local readonly ARG=$(my::rand_range);
 
-	${CMD[@]} ${ARG} | tee ${OUT} | ${CHECKER_LINUX} ${ARG} >${YOURS} 2>&1;
+	{ ${CMD[@]} ${ARG} | tee ${OUT} | ${CHECKER_LINUX} ${ARG}; } >${YOURS} 2>&1;
 
 	#TEST PASS
 	if [ -z "$(diff -q ${YOURS} ${OK})" ]; then
